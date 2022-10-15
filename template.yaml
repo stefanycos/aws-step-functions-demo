@@ -1,0 +1,309 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Creating infra API Gateway with StepFunctions'
+
+Resources:
+  ## Provisioning API Gateway ##
+  ApiGateway:
+    DependsOn: StateMachineStepFunction
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: Gateway - Step Function Integration
+      Description: API to demonstrate sync integration with Step Functions
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  ApiGatewayDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - ApiGatewayMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: poc
+
+  ApiGatewayVersionResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{version}'
+
+  ApiGatewayUsersResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiGatewayVersionResource
+      PathPart: users
+
+  ApiGatewayUsersIdResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiGatewayUsersResource
+      PathPart: '{id}'
+
+  ApiGatewayMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Credentials: !GetAtt ApiGatewayRole.Arn
+        Uri: 'arn:aws:apigateway:us-east-1:states:action/StartSyncExecution'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              'application/json': 'empty'
+        RequestTemplates:
+          application/json: |-
+            {
+              "stateMachineArn": "arn:aws:states:us-east-1:564604832395:stateMachine:ValidateUserStepFunctionExpress",    
+              "input": "{\"version\": $input.params('id')}, {\"params\": \"$input.params()\", \"stage\": \"$context.stage\", \"resource_path\": \"$context.resourcePath\"}"
+            }
+        PassthroughBehavior: when_no_templates
+      ResourceId: !Ref ApiGatewayUsersIdResource
+      RestApiId: !Ref ApiGateway
+
+  ## Step Function State Machine ##
+  StateMachineStepFunction:
+    DependsOn: [LambdaValidateUserV1, LambdaValidateUserV2]
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      DefinitionString: !Sub |
+        {
+          "Comment": "POC State Machine | Validate User",
+          "StartAt": "version-choice",
+          "States": {
+            "version-choice": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.version",
+                  "NumericEquals": 1,
+                  "Next": "Lambda | Validate User V1"
+                },
+                {
+                  "Variable": "$.version",
+                  "NumericGreaterThanEquals": 2,
+                  "Next": "Lambda | Validate User V2"
+                }
+              ]
+            },
+            "Lambda | Validate User V1": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "arn:aws:lambda:us-east-1:564604832395:function:validate-user-lambda-v1:$LATEST"
+              },
+              "End": true
+            },
+            "Lambda | Validate User V2": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "arn:aws:lambda:us-east-1:564604832395:function:validate-user-lambda-v2:$LATEST"
+              },
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt 'StepFunctionRole.Arn'
+      Tags:
+        - Key: 'Name'
+          Value: 'ValidateUserStepFunctionExpress'
+
+  ## Roles ##
+  ApiGatewayRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: put-cloudwatch-logs-policy
+          PolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "logs:CreateLogGroup",
+                          "logs:CreateLogStream",
+                          "logs:DescribeLogGroups",
+                          "logs:DescribeLogStreams",
+                          "logs:PutLogEvents",
+                          "logs:GetLogEvents",
+                          "logs:FilterLogEvents"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+            }
+        - PolicyName: invoke-step-function-policy
+          PolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": "states:*",
+                      "Resource": "*"
+                  }
+              ]
+            }
+
+  StepFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'states.amazonaws.com'
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: lambda-invoke-policy
+          PolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "lambda:InvokeFunction"
+                      ],
+                      "Resource": [
+                          "arn:aws:lambda:us-east-1:564604832395:*"
+                      ]
+                  }
+              ]
+            }
+        - PolicyName: step-function-logs-policy
+          PolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Action": [
+                          "logs:*"
+                      ],
+                      "Effect": "Allow",
+                      "Resource": "*"
+                  }
+              ]
+            }
+
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'lambda.amazonaws.com'
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: put-cloudwatch-logs-policy
+          PolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "logs:CreateLogGroup",
+                          "logs:CreateLogStream",
+                          "logs:PutLogEvents"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+            }
+  ## Lambdas ##
+  LambdaValidateUserV1:
+    DependsOn: LambdaRole
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs14.x
+      FunctionName: validate-user-lambda-v1
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+
+            console.log('Starting lambda-validate-user version: v1 execution with event: ', event);
+
+            let userId = event['params']['path']['id'];
+
+            if (userId >= 10) {
+                return {
+                    statusCode: 200,
+                    body: {
+                        user: userId,
+                        valid: true
+                    },
+                };
+            } else {
+                return {
+                    statusCode: 200,
+                    body: {
+                        user: userId,
+                        valid: false
+                    },
+                };
+            }
+          }
+      Description: Lambda to validate a user based on it's id
+
+  LambdaValidateUserV2:
+    DependsOn: LambdaRole
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs14.x
+      FunctionName: validate-user-lambda-v2
+      Role: !GetAtt LambdaRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+
+            console.log('Starting lambda-validate-user version: v2 execution with event: ', event);
+
+            let userId = event['params']['path']['id'];
+
+            if (userId >= 100) {
+                return {
+                    statusCode: 200,
+                    body: {
+                        user: userId,
+                        valid: true
+                    },
+                };
+            } else {
+                return {
+                    statusCode: 200,
+                    body: {
+                        user: userId,
+                        valid: false
+                    },
+                };
+            }
+          }
+      Description: Lambda to validate a user based on it's id
