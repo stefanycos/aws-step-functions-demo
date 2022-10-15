@@ -114,9 +114,8 @@ Resources:
           }
         }
       RoleArn: !GetAtt 'StepFunctionRole.Arn'
-      Tags:
-        - Key: 'Name'
-          Value: 'ValidateUserStepFunctionExpress'
+      StateMachineName: ValidateUserStepFunctionExpress
+      StateMachineType: 'EXPRESS'
 
   ## Roles ##
   ApiGatewayRole:
