@@ -55,12 +55,15 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
             ResponseTemplates:
-              'application/json': 'empty'
+              'application/json': |-
+                "#set($output = $util.parseJson($input.path('$.output')))\n\
+                  #if($output.statusCode != 200)\n    #set($context.responseOverride.status\
+                  \ = $output.statusCode)\n#end\n$output.body"
         RequestTemplates:
           application/json: |-
             {
-              "stateMachineArn": "arn:aws:states:us-east-1:564604832395:stateMachine:ValidateUserStepFunctionExpress",    
-              "input": "{\"version\": $input.params('id')}, {\"params\": \"$input.params()\", \"stage\": \"$context.stage\", \"resource_path\": \"$context.resourcePath\"}"
+              "stateMachineArn": "arn:aws:states:us-east-1:564604832395:stateMachine:ValidateUserStepFunctionExpress",
+              "input": "{\"version\": $input.params('version'), \"gtw_params\": #set($allParams = $input.params()){\"params\" : {#foreach($type in $allParams.keySet()) #set($params = $allParams.get($type)) \"$type\" : { #foreach($paramName in $params.keySet()) \"$paramName\" : \"$util.escapeJavaScript($params.get($paramName))\" #if($foreach.hasNext),#end #end } #if($foreach.hasNext),#end #end } }}"
             }
         PassthroughBehavior: when_no_templates
       ResourceId: !Ref ApiGatewayUsersIdResource
@@ -234,6 +237,7 @@ Resources:
                   }
               ]
             }
+
   ## Lambdas ##
   LambdaValidateUserV1:
     DependsOn: LambdaRole
@@ -246,29 +250,20 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = async (event) => {
-
             console.log('Starting lambda-validate-user version: v1 execution with event: ', event);
 
-            let userId = event['params']['path']['id'];
+            let userId = event['gtw_params']['params']['path']['id'];
+            console.log("User Id: ", userId);
 
             if (userId >= 10) {
-                return {
-                    statusCode: 200,
-                    body: {
-                        user: userId,
-                        valid: true
-                    },
-                };
+                const body = { user: userId, valid: true }
+                return { statusCode: 200, body: JSON.stringify(body) };
             } else {
-                return {
-                    statusCode: 200,
-                    body: {
-                        user: userId,
-                        valid: false
-                    },
-                };
+                const body = { user: userId, valid: true }
+                return { statusCode: 200, body: JSON.stringify(body) };
             }
           }
+
       Description: Lambda to validate a user based on it's id
 
   LambdaValidateUserV2:
@@ -282,27 +277,17 @@ Resources:
       Code:
         ZipFile: |
           exports.handler = async (event) => {
+            console.log('Starting lambda-validate-user version: v1 execution with event: ', event);
 
-            console.log('Starting lambda-validate-user version: v2 execution with event: ', event);
+            let userId = event['gtw_params']['params']['path']['id'];
+            console.log("User Id: ", userId);
 
-            let userId = event['params']['path']['id'];
-
-            if (userId >= 100) {
-                return {
-                    statusCode: 200,
-                    body: {
-                        user: userId,
-                        valid: true
-                    },
-                };
+            if (userId >= 10) {
+                const body = { user: userId, valid: true }
+                return { statusCode: 200, body: JSON.stringify(body) };
             } else {
-                return {
-                    statusCode: 200,
-                    body: {
-                        user: userId,
-                        valid: false
-                    },
-                };
+                const body = { user: userId, valid: true }
+                return { statusCode: 200, body: JSON.stringify(body) };
             }
           }
       Description: Lambda to validate a user based on it's id
