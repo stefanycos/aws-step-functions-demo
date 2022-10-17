@@ -1,6 +1,12 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: 'Creating infra API Gateway with StepFunctions'
 
+Parameters:
+  ApiGatewayStage:
+    Description: Deploymnet stage of API Gateway
+    Type: String
+    Default: poc
+
 Resources:
   ## Provisioning API Gateway ##
   ApiGateway:
@@ -19,7 +25,7 @@ Resources:
       - ApiGatewayMethod
     Properties:
       RestApiId: !Ref ApiGateway
-      StageName: poc
+      StageName: !Ref ApiGatewayStage
 
   ApiGatewayVersionResource:
     Type: 'AWS::ApiGateway::Resource'
@@ -291,3 +297,8 @@ Resources:
             }
           }
       Description: Lambda to validate a user based on it's id
+
+Outputs:
+  HttpRequestEndpoint:
+    Description: 'API HTTP Request Endpoint'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiGatewayStage}/{version}/users/{id}'
