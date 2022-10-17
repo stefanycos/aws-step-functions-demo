@@ -66,9 +66,11 @@ Resources:
           - StatusCode: 200
             ResponseTemplates:
               'application/json': |-
-                "#set($output = $util.parseJson($input.path('$.output')))\n\
-                  #if($output.statusCode != 200)\n    #set($context.responseOverride.status\
-                  \ = $output.statusCode)\n#end\n$output.body"
+                #set($output = $util.parseJson($input.path('$.output')))
+                  #if($output.statusCode != 200)
+                    #set($context.responseOverride.status= $output.statusCode)
+                #end
+                $output.body
         RequestTemplates:
           application/json: |-
             {
