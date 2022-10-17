@@ -31,5 +31,5 @@ File **template.yaml** contains the creation of all resources:
 - All Required Roles
 - Lambdas (with a simple code that can be available for edition in lambda console)
 
-Once the stack is created the URL to call the API Gateway will be provided at Cloudformation Outouts tab
+Once the stack is created the URL to call the API Gateway will be provided at Cloudformation Outputs tab. <\br>
 **Important:** after performing your tests don't forget to clean up your environment deleting the stack created.
