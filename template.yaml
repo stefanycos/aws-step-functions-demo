@@ -53,6 +53,10 @@ Resources:
     Properties:
       AuthorizationType: NONE
       HttpMethod: GET
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
       Integration:
         Type: AWS
         IntegrationHttpMethod: POST
